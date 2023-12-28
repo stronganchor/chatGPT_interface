@@ -1,8 +1,8 @@
 <?php
 /*
  * Plugin Name: * ChatGPT Interface
- * Description: A simple plugin to interact with the ChatGPT API.
- * Version: 1.0
+ * Description: A simple plugin to interact with Open AI's APIs for chatGPT, Text-to-Speech and Speech-to-Text.
+ * Version: 1.1
  * Author: Strong Anchor Tech
  * Author URI: https://stronganchortech.com
 */
@@ -215,5 +215,67 @@ function tts_shortcode_callback() {
     return $output;
 }
 add_shortcode('tts_form', 'tts_shortcode_callback');
+
+/*
+ * Generate a text file by transcribing speech in an audio file, using OpenAI's Speech-To-Text API
+ */
+function transcribe_audio_to_text($audio_url) {
+    $api_key = get_option('chatgpt_api_key'); // Retrieve API key from WordPress settings
+    $url = 'https://api.openai.com/v1/audio/transcriptions';
+
+    $headers = [
+        'Authorization: Bearer ' . $api_key,
+        'Content-Type: multipart/form-data'
+    ];
+
+    $postfields = [
+        'file' => new CURLFile($audio_url),
+        'model' => 'whisper-1',
+        'response_format' => 'text'
+    ];
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $postfields);
+
+    $response = curl_exec($ch);
+
+    if (curl_errno($ch)) {
+        $error_msg = curl_error($ch);
+        curl_close($ch);
+        return "cURL Error: " . $error_msg;
+    }
+
+    curl_close($ch);
+
+    // The response is already in text format, so directly return it
+    if (!empty($response)) {
+        return $response;
+    } else {
+        return 'Error: No text found in the response.';
+    }
+}
+/*
+ * Creates a shortcode [audio_to_text_form] to prompt the user for an audio file and display the speech-to-text results.
+ */
+function audio_to_text_shortcode_callback() {
+    $output = '<form method="post">';
+    $output .= '<input type="text" name="audio_url" required placeholder="Enter audio file URL...">';
+    $output .= '<input type="submit" value="Transcribe Audio">';
+    $output .= '</form>';
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['audio_url'])) {
+        $audio_url = sanitize_text_field($_POST['audio_url']);
+        $transcribed_text = transcribe_audio_to_text($audio_url);
+
+        $output .= '<div class="transcribed-text">' . esc_html($transcribed_text) . '</div>';
+    }
+
+    return $output;
+}
+add_shortcode('audio_to_text_form', 'audio_to_text_shortcode_callback');
 
 ?>
