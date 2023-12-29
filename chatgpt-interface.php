@@ -2,7 +2,7 @@
 /*
  * Plugin Name: * ChatGPT Interface
  * Description: A simple plugin to interact with Open AI's APIs for chatGPT, Text-to-Speech and Speech-to-Text.
- * Version: 1.1
+ * Version: 1.2
  * Author: Strong Anchor Tech
  * Author URI: https://stronganchortech.com
 */
@@ -55,7 +55,7 @@ add_action('admin_init', 'chatgpt_settings');
 /* 
  * Function to interact with ChatGPT API
  */
-function chatgpt_send_message($message) {
+function chatgpt_send_message($message, $model = 'gpt-3.5-turbo') {
     $api_key = get_option('chatgpt_api_key'); // Retrieve API key from WordPress settings
     $url = 'https://api.openai.com/v1/chat/completions';
 
@@ -65,7 +65,7 @@ function chatgpt_send_message($message) {
     ];
 
     $body = json_encode([
-        'model' => 'gpt-3.5-turbo',
+        'model' => $model,
         'messages' => [['role' => 'user', 'content' => $message]],
         'temperature' => 0.7
     ]);
