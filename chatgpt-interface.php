@@ -2,7 +2,7 @@
 /*
  * Plugin Name: * ChatGPT Interface
  * Description: A simple plugin to interact with Open AI's APIs for chatGPT, Text-to-Speech and Speech-to-Text.
- * Version: 1.2
+ * Version: 1.3
  * Author: Strong Anchor Tech
  * Author URI: https://stronganchortech.com
 */
@@ -22,9 +22,7 @@ function chatgpt_admin_page() {
 }
 add_action('admin_menu', 'chatgpt_admin_page');
 
-/* 
- * Display Admin Page content
- */
+// Display Admin Page content
 function chatgpt_interface_callback() {
     ?>
     <div class="wrap">
@@ -44,9 +42,7 @@ function chatgpt_interface_callback() {
     <?php
 }
 
-/*
- * Register and Store the API Key
- */
+// Register the admin settings
 function chatgpt_settings() {
     register_setting('chatgpt-settings-group', 'chatgpt_api_key');
 }
@@ -90,15 +86,13 @@ function chatgpt_send_message($message, $model = 'gpt-3.5-turbo') {
     $decoded_response = json_decode($response, true);
     if (isset($decoded_response['error'])) {
         error_log("ChatGPT API Error: " . $decoded_response['error']['message']);
-        //return "Error: " . $decoded_response['error']['message'];
-        return "Error: " . $decoded_response['error']['message'] . "    ChatGPT Raw Response: " . $response; //debugging code TODO: revert to line above
+        return "Error: " . $decoded_response['error']['message'] . "    Raw Response: " . $response;
     }
 
     $decoded_response = json_decode($response, true);
     if (!isset($decoded_response['choices'][0]['message']['content'])) {
         error_log("ChatGPT Error: Unexpected API response format.");
-        //return "Error: Unexpected API response format.";
-        return "Error: Unexpected API response format." . "    ChatGPT Raw Response: " . $response; //debugging code TODO: revert to line above
+        return "Error: Unexpected API response format." . "    Raw Response: " . $response; 
     }
 
     return $decoded_response['choices'][0]['message']['content'];
@@ -262,20 +256,100 @@ function transcribe_audio_to_text($audio_url) {
  * Creates a shortcode [audio_to_text_form] to prompt the user for an audio file and display the speech-to-text results.
  */
 function audio_to_text_shortcode_callback() {
-    $output = '<form method="post">';
-    $output .= '<input type="text" name="audio_url" required placeholder="Enter audio file URL...">';
+    $output = '<form method="post" enctype="multipart/form-data">';
+    $output .= '<label for="audio_file">Upload an audio file:</label><br>';
+    $output .= '<input type="file" name="audio_file" id="audio_file" accept="audio/*"><br>';
     $output .= '<input type="submit" value="Transcribe Audio">';
     $output .= '</form>';
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['audio_url'])) {
-        $audio_url = sanitize_text_field($_POST['audio_url']);
-        $transcribed_text = transcribe_audio_to_text($audio_url);
-
-        $output .= '<div class="transcribed-text">' . esc_html($transcribed_text) . '</div>';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['audio_file'])) {
+        if ($_FILES['audio_file']['size'] > 26214400) {
+            $output .= '<div class="error-message">Error: File size exceeds 26 MB limit.</div>';
+        } else {
+            $upload = wp_handle_upload($_FILES['audio_file'], array('test_form' => FALSE));
+            if (isset($upload['error'])) {
+                $output .= '<div class="error-message">Upload Error: ' . $upload['error'] . '</div>';
+            } else {
+                $audio_file_url = $upload['url'];
+                $transcribed_text = transcribe_audio_to_text($audio_file_url);
+                $output .= '<div class="transcribed-text">' . esc_html($transcribed_text) . '</div>';
+            }
+        }
     }
 
     return $output;
 }
 add_shortcode('audio_to_text_form', 'audio_to_text_shortcode_callback');
+
+
+/*
+ * Sends an image file to OpenAI API in order to receive a newly generated image similar to it.
+ */
+function generate_image_variation($image_url) {
+    $api_key = get_option('chatgpt_api_key'); // Retrieve API key from WordPress settings
+    $curl = curl_init();
+
+    curl_setopt_array($curl, [
+        CURLOPT_URL => 'https://api.openai.com/v1/images/variations',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_ENCODING => '',
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_TIMEOUT => 0,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POSTFIELDS => [
+            'image' => new CURLFile($image_url),
+            'model' => 'dall-e-2',
+            'n' => 1, // Number of variations to generate
+            'size' => '1024x1024'
+        ],
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $api_key
+        ],
+    ]);
+
+    $response = curl_exec($curl);
+    curl_close($curl);
+	
+	// Debugging: Display raw API response
+    echo '<pre>API Response: ' . htmlspecialchars($response) . '</pre>';
+
+    $decoded_response = json_decode($response, true);
+
+    // Accessing the URL from the response
+    if(isset($decoded_response['data'][0]['url'])) {
+        return $decoded_response['data'][0]['url'];
+    } else {
+        return null; // Return null if the URL is not found
+    }
+}
+
+/*
+ * Creates a shortcode [image_variation] to prompt the user for an image file and displays a similar image.
+ */
+function image_variation_shortcode() {
+    ob_start();
+    ?>
+    <form method="post" enctype="multipart/form-data">
+        <input type="file" name="uploaded_image" accept="image/*">
+        <input type="submit" name="submit_image" value="Generate Image Variation">
+    </form>
+    <?php
+    if (isset($_POST['submit_image']) && !empty($_FILES['uploaded_image'])) {
+        $file = $_FILES['uploaded_image']['tmp_name'];
+        $result = generate_image_variation($file);
+
+        if ($result) {
+            // Assuming the result contains a URL to the generated image
+            echo '<img src="' . esc_url($result) . '" alt="Generated Image Variation">';
+        } else {
+            echo 'An error occurred.';
+        }
+    }
+    return ob_get_clean();
+}
+add_shortcode('image_variation', 'image_variation_shortcode');
+
 
 ?>
