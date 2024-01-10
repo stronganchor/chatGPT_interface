@@ -2,7 +2,7 @@
 /*
  * Plugin Name: * ChatGPT Interface
  * Description: A simple plugin to interact with Open AI's APIs for chatGPT, Text-to-Speech and Speech-to-Text.
- * Version: 1.3
+ * Version: 1.4
  * Author: Strong Anchor Tech
  * Author URI: https://stronganchortech.com
 */
@@ -63,7 +63,7 @@ function chatgpt_send_message($message, $model = 'gpt-3.5-turbo') {
     $body = json_encode([
         'model' => $model,
         'messages' => [['role' => 'user', 'content' => $message]],
-        'temperature' => 0.7
+        'temperature' => 0
     ]);
 
     $ch = curl_init();
@@ -213,8 +213,8 @@ add_shortcode('tts_form', 'tts_shortcode_callback');
 /*
  * Generate a text file by transcribing speech in an audio file, using OpenAI's Speech-To-Text API
  */
-function transcribe_audio_to_text($audio_url) {
-    $api_key = get_option('chatgpt_api_key'); // Retrieve API key from WordPress settings
+function transcribe_audio_to_text($audio_url, $user_prompt) {
+    $api_key = get_option('chatgpt_api_key');
     $url = 'https://api.openai.com/v1/audio/transcriptions';
 
     $headers = [
@@ -225,7 +225,8 @@ function transcribe_audio_to_text($audio_url) {
     $postfields = [
         'file' => new CURLFile($audio_url),
         'model' => 'whisper-1',
-        'response_format' => 'text'
+        'response_format' => 'text',
+        'prompt' => $user_prompt // Add user prompt
     ];
 
     $ch = curl_init();
@@ -245,13 +246,13 @@ function transcribe_audio_to_text($audio_url) {
 
     curl_close($ch);
 
-    // The response is already in text format, so directly return it
     if (!empty($response)) {
         return $response;
     } else {
         return 'Error: No text found in the response.';
     }
 }
+
 /*
  * Creates a shortcode [audio_to_text_form] to prompt the user for an audio file and display the speech-to-text results.
  */
@@ -259,6 +260,7 @@ function audio_to_text_shortcode_callback() {
     $output = '<form method="post" enctype="multipart/form-data">';
     $output .= '<label for="audio_file">Upload an audio file:</label><br>';
     $output .= '<input type="file" name="audio_file" id="audio_file" accept="audio/*"><br>';
+    $output .= '<textarea name="user_prompt" placeholder="Enter a prompt to assist transcription (optional)"></textarea><br>';
     $output .= '<input type="submit" value="Transcribe Audio">';
     $output .= '</form>';
 
@@ -271,7 +273,8 @@ function audio_to_text_shortcode_callback() {
                 $output .= '<div class="error-message">Upload Error: ' . $upload['error'] . '</div>';
             } else {
                 $audio_file_url = $upload['url'];
-                $transcribed_text = transcribe_audio_to_text($audio_file_url);
+                $user_prompt = isset($_POST['user_prompt']) ? sanitize_text_field($_POST['user_prompt']) : '';
+                $transcribed_text = transcribe_audio_to_text($audio_file_url, $user_prompt);
                 $output .= '<div class="transcribed-text">' . esc_html($transcribed_text) . '</div>';
             }
         }
@@ -280,7 +283,6 @@ function audio_to_text_shortcode_callback() {
     return $output;
 }
 add_shortcode('audio_to_text_form', 'audio_to_text_shortcode_callback');
-
 
 /*
  * Sends an image file to OpenAI API in order to receive a newly generated image similar to it.
