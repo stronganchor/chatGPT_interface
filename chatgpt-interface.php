@@ -2,7 +2,7 @@
 /*
  * Plugin Name: * ChatGPT Interface
  * Description: A simple plugin to interact with Open AI's APIs for chatGPT, Text-to-Speech and Speech-to-Text.
- * Version: 1.4
+ * Version: 1.5
  * Author: Strong Anchor Tech
  * Author URI: https://stronganchortech.com
 */
@@ -247,10 +247,53 @@ function transcribe_audio_to_text($audio_url, $user_prompt) {
     curl_close($ch);
 
     if (!empty($response)) {
-        return $response;
+        $escaped_response = esc_html($response);
+		return add_paragraph_breaks_to_text($escaped_response);
     } else {
         return 'Error: No text found in the response.';
     }
+}
+
+function add_paragraph_breaks_to_text($text) {
+    $processed_text = '';
+    $remainingText = $text;
+    $error_messages = ''; // Initialize variable to accumulate error messages
+
+    while (!empty($remainingText)) {
+        // Extract the first 200 words for analysis
+        $first200WordsArray = array_slice(explode(' ', $remainingText), 0, 200);
+        $first200Words = implode(' ', $first200WordsArray);
+
+        $prompt = "Given the following text, identify the number of sentences that should form the first paragraph. Provide a single number between 1 and 5 as your response, with no other commentary.\n\n" . $first200Words;
+        
+        $model = 'gpt-3.5-turbo'; // Using gpt-3.5-turbo model
+        $response = chatgpt_send_message($prompt, $model);
+
+        // Attempt to extract a single number from the response
+        preg_match('/\b[1-5]\b/', $response, $matches);
+        if (empty($matches)) {
+            // If no valid number is found, log the error and proceed without breaking
+            $error_messages .= '<strong>Error: Received unexpected response format from the API: </strong>' . htmlspecialchars($response) . ' <strong>For text: </strong>' . htmlspecialchars($first200Words) . '<br />';
+            // Default to a conservative number of sentences if no valid response is received
+            $length = 2;
+        } else {
+            $length = (int) $matches[0]; // Use the extracted number
+        }
+
+        $sentences = preg_split('/(?<=[.!?])\s+/', $remainingText, -1, PREG_SPLIT_NO_EMPTY);
+        $paragraph = array_slice($sentences, 0, $length);
+        $processed_text .= '<p>' . implode(' ', $paragraph) . '</p>';
+
+        // Update remainingText for the next iteration
+        $remainingText = implode(' ', array_slice($sentences, $length));
+    }
+
+    // Append any error messages to the bottom of the processed text
+    if (!empty($error_messages)) {
+        $processed_text .= "<div class='error-messages'>$error_messages</div>";
+    }
+
+    return $processed_text;
 }
 
 /*
@@ -275,7 +318,7 @@ function audio_to_text_shortcode_callback() {
                 $audio_file_url = $upload['url'];
                 $user_prompt = isset($_POST['user_prompt']) ? sanitize_text_field($_POST['user_prompt']) : '';
                 $transcribed_text = transcribe_audio_to_text($audio_file_url, $user_prompt);
-                $output .= '<div class="transcribed-text">' . esc_html($transcribed_text) . '</div>';
+                $output .= '<div class="transcribed-text">' . $transcribed_text . '</div>';
             }
         }
     }
